@@ -4,6 +4,8 @@
 
 A Decky plugin for Steam Deck games where controller or relative mouse input stops responding until the game loses and regains focus.
 
+The plugin follows the Steam interface language. It displays Chinese in Chinese environments and English in other locales.
+
 ## Usage
 
 1. Enable Developer Mode in Decky settings. Choose **Install Plugin from ZIP File** and select `UmeYc-FocusFix.zip`.

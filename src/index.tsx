@@ -2,6 +2,7 @@ import { callable, definePlugin, FileSelectionType, openFilePicker, toaster } fr
 import { ButtonItem, DropdownItem, PanelSection, Router, TextField, ToggleField } from "@decky/ui";
 import { useEffect, useState } from "react";
 import { FaCrosshairs } from "react-icons/fa";
+import { getText, type Text } from "./i18n";
 
 type Game = { id: string; name: string };
 type Config = { name: string; log_path: string; marker: string; enabled: boolean };
@@ -16,7 +17,7 @@ type LibraryWindow = Window & {
     deckDesktopApps?: Collection;
   };
 };
-type FocusResult = "success" | "not_foreground" | "unavailable" | "unconfirmed" | "cancelled";
+type FocusResult = keyof Text["focus"];
 
 const getSettings = callable<[], Settings>("get_settings");
 const setStarRail = callable<[boolean], { enabled: boolean }>("set_star_rail");
@@ -24,13 +25,6 @@ const focusGame = callable<[string], FocusResult>("focus_current_game");
 const saveConfig = callable<[string, string, string, string], Configs>("save_game_config");
 const toggleConfig = callable<[string, boolean], Configs>("set_game_config");
 const deleteConfig = callable<[string], Configs>("delete_game_config");
-const messages: Record<FocusResult, string> = {
-  success: "已切换焦点并返回游戏",
-  not_foreground: "请先返回运行中的游戏，再打开插件操作",
-  unavailable: "当前 Gamescope 会话无法切换焦点",
-  unconfirmed: "Gamescope 未确认焦点已完成切换",
-  cancelled: "焦点切换已取消",
-};
 
 function listGames(): Game[] {
   const collections = (window as LibraryWindow).collectionStore;
@@ -51,7 +45,9 @@ function listGames(): Game[] {
   return Array.from(games.values()).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function CustomRules({ settings }: { settings: Settings }) {
+type RuleError = "toggleFailed" | "saveFailed" | "deleteFailed";
+
+function CustomRules({ settings, text }: { settings: Settings; text: Text }) {
   const [configs, setConfigs] = useState(settings.configs);
   const [editing, setEditing] = useState(false);
   const [games, setGames] = useState<Game[]>([]);
@@ -60,7 +56,7 @@ function CustomRules({ settings }: { settings: Settings }) {
   const [marker, setMarker] = useState("");
   const [busy, setBusy] = useState(false);
   const [picking, setPicking] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<RuleError>();
 
   function edit(game?: Game) {
     const available = listGames();
@@ -69,7 +65,7 @@ function CustomRules({ settings }: { settings: Settings }) {
     setSelected(game);
     setPath(game ? configs[game.id]?.log_path ?? "" : "");
     setMarker(game ? configs[game.id]?.marker ?? "" : "");
-    setError("");
+    setError(undefined);
     setEditing(true);
   }
 
@@ -77,7 +73,7 @@ function CustomRules({ settings }: { settings: Settings }) {
     setSelected(game);
     setPath(configs[game.id]?.log_path ?? "");
     setMarker(configs[game.id]?.marker ?? "");
-    setError("");
+    setError(undefined);
   }
 
   async function chooseLog() {
@@ -89,7 +85,7 @@ function CustomRules({ settings }: { settings: Settings }) {
         true, true, undefined, ["log", "txt"], true,
       );
       setPath(chosen.realpath || chosen.path);
-      setError("");
+      setError(undefined);
     } catch {
       // The picker rejects when it is closed without a selection.
     } finally {
@@ -97,9 +93,9 @@ function CustomRules({ settings }: { settings: Settings }) {
     }
   }
 
-  async function update(action: () => Promise<Configs>, failure: string, close = false) {
+  async function update(action: () => Promise<Configs>, failure: RuleError, close = false) {
     setBusy(true);
-    setError("");
+    setError(undefined);
     try {
       setConfigs(await action());
       if (close) setEditing(false);
@@ -112,26 +108,26 @@ function CustomRules({ settings }: { settings: Settings }) {
 
   const locked = busy || picking;
   return (
-    <PanelSection title="自定义自动修复">
+    <PanelSection title={text.customRules}>
       {Object.entries(configs).map(([id, config]) => (
         <ToggleField
           key={id}
           label={config.name}
           checked={config.enabled}
           disabled={locked || editing}
-          onChange={(value) => void update(() => toggleConfig(id, value), "无法保存开关")}
+          onChange={(value) => void update(() => toggleConfig(id, value), "toggleFailed")}
         />
       ))}
       {!editing && (
         <ButtonItem layout="below" onClick={() => edit()} disabled={locked}>
-          添加或编辑规则
+          {text.editRule}
         </ButtonItem>
       )}
       {editing && (
         <>
           <DropdownItem
-            label="游戏"
-            strDefaultLabel="选择游戏"
+            label={text.game}
+            strDefaultLabel={text.selectGame}
             rgOptions={games.map((game) => ({ data: game.id, label: game.name }))}
             selectedOption={selected?.id}
             disabled={locked}
@@ -140,18 +136,18 @@ function CustomRules({ settings }: { settings: Settings }) {
               if (game) select(game);
             }}
           />
-          {games.length === 0 && <div role="status">游戏列表不可用。启动游戏后可在这里选择。</div>}
+          {games.length === 0 && <div role="status">{text.gameListUnavailable}</div>}
           <ButtonItem
             layout="below"
-            label="日志文件"
+            label={text.logFile}
             description={path ? <span style={{ overflowWrap: "anywhere" }}>{path}</span> : undefined}
             disabled={!selected || locked}
             onClick={chooseLog}
           >
-            选择日志文件
+            {text.selectLog}
           </ButtonItem>
           <TextField
-            label="触发行"
+            label={text.marker}
             value={marker}
             disabled={!selected || locked}
             onChange={(event) => setMarker(event.target.value)}
@@ -162,32 +158,33 @@ function CustomRules({ settings }: { settings: Settings }) {
             onClick={() => {
               if (selected) void update(
                 () => saveConfig(selected.id, selected.name, path, marker),
-                "无法保存。请选择有效的日志文件，并填写一行触发文字。", true,
+                "saveFailed", true,
               );
             }}
           >
-            保存规则
+            {text.saveRule}
           </ButtonItem>
           {selected && configs[selected.id] && (
             <ButtonItem
               layout="below"
               disabled={locked}
-              onClick={() => void update(() => deleteConfig(selected.id), "无法删除规则", true)}
+              onClick={() => void update(() => deleteConfig(selected.id), "deleteFailed", true)}
             >
-              删除规则
+              {text.deleteRule}
             </ButtonItem>
           )}
           <ButtonItem layout="below" disabled={locked} onClick={() => setEditing(false)}>
-            返回
+            {text.back}
           </ButtonItem>
         </>
       )}
-      {error && <div role="status">{error}</div>}
+      {error && <div role="status">{text[error]}</div>}
     </PanelSection>
   );
 }
 
 function FocusFix() {
+  const text = getText(window.LocalizationManager?.m_rgLocalesToUse?.[0], window.navigator.language);
   const [settings, setSettings] = useState<Settings>();
   const [saving, setSaving] = useState(false);
   const [focusing, setFocusing] = useState(false);
@@ -213,7 +210,7 @@ function FocusFix() {
       const result = await setStarRail(value);
       setSettings((previous) => previous && { ...previous, enabled: result.enabled });
     } catch {
-      toaster.toast({ title: "UmeYc-FocusFix", body: "无法保存自动修复设置" });
+      toaster.toast({ title: "UmeYc-FocusFix", body: text.autoSaveFailed });
     } finally {
       setSaving(false);
     }
@@ -226,9 +223,9 @@ function FocusFix() {
     try {
       Router.CloseSideMenus();
       const result = await focusGame(String(app));
-      toaster.toast({ title: "UmeYc-FocusFix", body: messages[result] });
+      toaster.toast({ title: "UmeYc-FocusFix", body: text.focus[result] });
     } catch {
-      toaster.toast({ title: "UmeYc-FocusFix", body: "无法切换当前游戏的焦点" });
+      toaster.toast({ title: "UmeYc-FocusFix", body: text.manualFailed });
     } finally {
       setFocusing(false);
     }
@@ -238,17 +235,17 @@ function FocusFix() {
     <>
       <PanelSection>
         <ToggleField
-          label="崩坏：星穹铁道"
-          description={loadFailed ? "无法读取设置" : "自动修复"}
+          label={text.starRail}
+          description={loadFailed ? text.loadFailed : text.automatic}
           checked={settings?.enabled ?? false}
           disabled={!settings || saving}
           onChange={toggle}
         />
         <ButtonItem layout="below" disabled={!runningApp || focusing} onClick={focus}>
-          手动切换焦点
+          {text.manual}
         </ButtonItem>
       </PanelSection>
-      {settings && <CustomRules settings={settings} />}
+      {settings && <CustomRules settings={settings} text={text} />}
     </>
   );
 }
