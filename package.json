@@ -6,8 +6,8 @@
   "packageManager": "pnpm@10.4.1",
   "scripts": {
     "check": "tsc --noEmit",
-    "build": "rollup -c",
-    "package": "rollup -c && python3 scripts/package.py"
+    "build": "rollup -c --forceExit",
+    "package": "pnpm build && python3 scripts/package.py"
   },
   "dependencies": {
     "@decky/api": "1.1.3",
