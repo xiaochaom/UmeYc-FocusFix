@@ -15,7 +15,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
@@ -40,7 +39,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           notes=$(mktemp)
-          git for-each-ref --format='%(contents)' "refs/tags/$GITHUB_REF_NAME" > "$notes"
+          source="refs/release-notes/$GITHUB_REF_NAME"
+          git fetch --no-tags origin "refs/tags/$GITHUB_REF_NAME:$source"
+          test "$(git cat-file -t "$source")" = tag
+          git for-each-ref --format='%(contents)' "$source" > "$notes"
+          test -s "$notes"
           gh release create "$GITHUB_REF_NAME" out/UmeYc-FocusFix.zip \
             --repo "$GITHUB_REPOSITORY" --verify-tag --notes-file "$notes" \
             --title "UmeYc-FocusFix $GITHUB_REF_NAME"
