@@ -73,7 +73,7 @@ def find_sessions(uid, configured, watch_star_rail, proc=Path("/proc")):
         if not steam_id:
             continue
         previous = sessions.get(steam_id)
-        if previous and (not is_star_rail or previous.star_rail) and previous.start_ticks <= ticks:
+        if previous and (not previous.star_rail, previous.start_ticks) <= (not is_star_rail, ticks):
             continue
         prefixes = []
         for key, suffix in ((b"WINEPREFIX", ""), (b"STEAM_COMPAT_DATA_PATH", "/pfx")):

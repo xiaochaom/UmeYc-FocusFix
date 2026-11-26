@@ -131,7 +131,7 @@ class SessionTests(unittest.TestCase):
         ), patch.object(time, "clock_gettime_ns", return_value=0):
             proc = Path(directory)
             for pid, name, tick in (
-                ("100", "launcher", 100), ("101", "StarRail.exe", 104),
+                ("101", "StarRail.exe", 104), ("100", "launcher", 100),
                 ("102", "helper", 106),
             ):
                 process = proc / pid
