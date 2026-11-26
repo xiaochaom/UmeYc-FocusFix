@@ -2,7 +2,11 @@
 
 from contextlib import contextmanager
 import ctypes as c
+import os
 from pathlib import Path
+import pwd
+import re
+import subprocess
 import time
 
 
@@ -14,6 +18,8 @@ FOCUSED_APP = "GAMESCOPE_FOCUSED_APP"
 FOCUSED_GFX = "GAMESCOPE_FOCUSED_APP_GFX"
 FOCUSED_WINDOW = "GAMESCOPE_FOCUSED_WINDOW"
 FOCUSABLE = "GAMESCOPE_FOCUSABLE_APPS"
+FOCUSABLE_WINDOWS = "GAMESCOPE_FOCUSABLE_WINDOWS"
+BRIDGE = Path(__file__).resolve().parent / "bin/focus-bridge.exe"
 
 
 class X11:
@@ -155,7 +161,84 @@ def cycle(root, app_id, still_wanted):
     return "success" if lost and restored else "unconfirmed"
 
 
-def refocus(app_id, still_wanted, wait_for_menu=False):
+def _wine_window(root, app_id, uid):
+    window = root.get(FOCUSED_WINDOW)
+    values = root.get(FOCUSABLE_WINDOWS) or ()
+    for window_id, owner, pid in zip(values[::3], values[1::3], values[2::3]):
+        if owner != app_id or (window_id,) != window or not pid:
+            continue
+        process = Path("/proc") / str(pid)
+        try:
+            if process.stat().st_uid != uid:
+                return None
+            settings = dict(
+                field.split(b"=", 1) for field in (process / "environ").read_bytes().split(b"\0")
+                if b"=" in field
+            )
+        except OSError:
+            return None
+        if b"WINEPREFIX" in settings:
+            return window, settings
+    return None
+
+
+def _wine_bridge(root, app_id, window, settings, username, still_wanted):
+    account = pwd.getpwnam(username)
+    prefix = Path(os.fsdecode(settings[b"WINEPREFIX"]))
+    display = os.fsdecode(settings.get(b"DISPLAY", b""))
+    wine = None
+    for value in settings.get(b"STEAM_COMPAT_TOOL_PATHS", b"").split(b":"):
+        tool = Path(os.fsdecode(value))
+        candidate = tool / "files/bin/wine"
+        if tool.is_absolute() and candidate.is_file():
+            wine = candidate
+            break
+    if (
+        not BRIDGE.is_file() or wine is None or not prefix.is_absolute() or not prefix.is_dir()
+        or not re.fullmatch(r":\d+(?:\.\d+)?", display)
+    ):
+        return "unavailable"
+    if not still_wanted():
+        return "cancelled"
+    if root.get(FOCUSED_APP) != (app_id,) or root.get(FOCUSED_WINDOW) != window:
+        return "not_foreground"
+
+    environment = {
+        "HOME": account.pw_dir,
+        "USER": username,
+        "LOGNAME": username,
+        "PATH": os.defpath,
+        "WINEPREFIX": str(prefix),
+        "DISPLAY": display,
+        "WINEDEBUG": "-all",
+    }
+    for key in ("SteamAppId", "SteamGameId"):
+        value = settings.get(key.encode(), b"")
+        if re.fullmatch(rb"-?\d+", value):
+            environment[key] = value.decode("ascii")
+    credentials = {}
+    if os.geteuid() == 0:
+        credentials = {
+            "user": account.pw_uid, "group": account.pw_gid,
+            "extra_groups": os.getgrouplist(username, account.pw_gid),
+        }
+    elif os.geteuid() != account.pw_uid:
+        return "unavailable"
+    try:
+        result = subprocess.run(
+            [wine, BRIDGE], cwd=account.pw_dir, env=environment, timeout=5,
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            **credentials,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "unconfirmed"
+    returned = wait_for(lambda: (
+        root.get(FOCUSED_APP) == (app_id,) and root.get(FOCUSED_WINDOW) == window
+    ), 0.65)
+    return "success" if result.returncode == 0 and returned else "unconfirmed"
+
+
+def refocus(app_id, still_wanted, wait_for_menu=False, username=None):
     try:
         x11 = X11()
     except OSError:
@@ -169,5 +252,9 @@ def refocus(app_id, still_wanted, wait_for_menu=False):
                 continue
             if wait_for_menu:
                 wait_for(lambda: root.get(FOCUSED_APP) == (app_id,), 0.6)
+            if username and root.get(FOCUSED_APP) == (app_id,):
+                match = _wine_window(root, app_id, pwd.getpwnam(username).pw_uid)
+                if match:
+                    return _wine_bridge(root, app_id, *match, username, still_wanted)
             return cycle(root, app_id, still_wanted)
     return "not_foreground"

@@ -9,7 +9,7 @@ root = Path(__file__).resolve().parent.parent
 name = json.loads((root / "plugin.json").read_text())["name"]
 files = (
     "plugin.json", "package.json", "main.py", "gamescope.py",
-    "star_rail.py", "dist/index.js", "README.md", "README.en.md",
+    "star_rail.py", "dist/index.js", "bin/focus-bridge.exe", "README.md", "README.en.md",
 )
 for file in files:
     if not (root / file).is_file():

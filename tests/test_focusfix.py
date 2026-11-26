@@ -58,6 +58,26 @@ class FocusTests(unittest.TestCase):
         self.assertEqual(cycle(root, 2450901161, lambda: False), "cancelled")
         self.assertEqual(root.changes, [])
 
+    def test_proton_game_uses_win32_bridge(self):
+        from gamescope import refocus
+
+        root = FakeRoot()
+        settings = {b"WINEPREFIX": b"/home/deck/prefix"}
+        still_wanted = lambda: True
+        with (
+            patch("gamescope.Path.glob", return_value=[Path("/tmp/.X11-unix/X0")]),
+            patch("gamescope.X11") as x11,
+            patch("gamescope.pwd.getpwnam"),
+            patch("gamescope._wine_window", return_value=(root.original_window, settings)),
+            patch("gamescope._wine_bridge", return_value="success") as bridge,
+        ):
+            x11.return_value.display.return_value = nullcontext(root)
+            self.assertEqual(refocus(2450901161, still_wanted, username="deck"), "success")
+            bridge.assert_called_once_with(
+                root, 2450901161, root.original_window, settings, "deck", still_wanted,
+            )
+        self.assertEqual(root.changes, [])
+
     def test_steam_updates_take_priority_during_cycle(self):
         root = FakeRoot()
 

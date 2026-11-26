@@ -7,7 +7,7 @@
   "scripts": {
     "check": "tsc --noEmit",
     "build": "rollup -c --forceExit",
-    "package": "pnpm build && python3 scripts/package.py"
+    "package": "pnpm build && sh scripts/build-bridge.sh && python3 scripts/package.py"
   },
   "dependencies": {
     "@decky/api": "1.1.3",

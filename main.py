@@ -17,7 +17,8 @@ class Plugin:
     async def _main(self):
         self.settings_path = Path(decky.DECKY_PLUGIN_SETTINGS_DIR) / "settings.json"
         self.home = Path(decky.DECKY_USER_HOME).resolve()
-        self.uid = pwd.getpwnam(decky.DECKY_USER).pw_uid
+        self.username = decky.DECKY_USER
+        self.uid = pwd.getpwnam(self.username).pw_uid
         self.log_roots = (
             self.home, Path("/run/media") / decky.DECKY_USER, Path("/mnt"),
         )
@@ -112,7 +113,7 @@ class Plugin:
         await asyncio.sleep(0.15)
         async with self.focus_lock:
             return await asyncio.to_thread(
-                refocus, number, lambda: not self.stopping.is_set(), True,
+                refocus, number, lambda: not self.stopping.is_set(), True, self.username,
             )
 
     async def _watch(self):
@@ -175,7 +176,9 @@ class Plugin:
                 return enabled and not self.stopping.is_set() and session.process.exists()
 
             async with self.focus_lock:
-                result = await asyncio.to_thread(refocus, session.app_id, still_wanted)
+                result = await asyncio.to_thread(
+                    refocus, session.app_id, still_wanted, username=self.username,
+                )
             if result not in ("success", "unconfirmed"):
                 continue
             attempted[key] = token
