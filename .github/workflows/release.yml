@@ -1,0 +1,43 @@
+name: Publish Decky release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: pnpm
+      - name: Verify release version
+        run: |
+          version=$(node -p "require('./package.json').version")
+          test "$GITHUB_REF_NAME" = "v$version"
+      - name: Build and test
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-mingw-w64-x86-64-posix
+          pnpm install --frozen-lockfile
+          pnpm check
+          python3 -m unittest discover -s tests
+          FOCUSFIX_CC=x86_64-w64-mingw32-gcc-posix pnpm package
+          unzip -t out/UmeYc-FocusFix.zip
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" out/UmeYc-FocusFix.zip \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --notes-from-tag \
+            --title "UmeYc-FocusFix $GITHUB_REF_NAME"
