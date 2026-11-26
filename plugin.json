@@ -1,0 +1,11 @@
+{
+  "name": "UmeYc-FocusFix",
+  "author": "xiaochaom",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["utility", "gamescope", "input"],
+    "description": "Steam Deck 游戏焦点修复，支持崩坏：星穹铁道自动触发和当前游戏手动切换焦点。",
+    "image": ""
+  }
+}
